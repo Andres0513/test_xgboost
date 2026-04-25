@@ -47,6 +47,7 @@ reg_model.fit(X_train, y_train_reg)
 y_pred_reg = reg_model.predict(X_test)
 print("回归模型MAE:", mean_absolute_error(y_test_reg, y_pred_reg))
 
+
 # ----------------------
 # 6. 第二步：构造区间标签，训练分类模型预测+-2天内的概率
 # ----------------------

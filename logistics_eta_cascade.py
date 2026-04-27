@@ -1,91 +1,90 @@
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import mean_absolute_error, accuracy_score, roc_auc_score
 import xgboost as xgb
 
 # ===================== 1. 读取数据 =====================
 raw_data = pd.read_csv('1/logistics_shipments_dataset.csv')
-
-# 只保留已送达的数据
 df = raw_data[raw_data["Status"] == "Delivered"].reset_index(drop=True)
 
-# ----------------------
-# 2. 特征与目标定义
-# ----------------------
+# ===================== 2. 构建路线（分组关键字） =====================
+df["route"] = (
+    df["Origin_Warehouse"].astype(str) + "|" +
+    df["Destination"].astype(str) + "|" +
+    df["Carrier"].astype(str)
+)
+
+# ===================== 3. 对每条路线计算真实 min / max =====================
+# 这是我们要让 XGBoost 去学习的目标
+route_targets = df.groupby("route")["Transit_Days"].agg(
+    route_min="min",
+    route_max="max"
+).reset_index()
+
+# 把 route min/max 合并回原数据
+df = df.merge(route_targets, on="route", how="left")
+
+# ===================== 4. 特征 =====================
 cat_features = ["Origin_Warehouse", "Destination", "Carrier"]
 num_features = ["Weight_kg", "Cost", "Distance_miles"]
 X = df[cat_features + num_features]
-y_reg = df["Transit_Days"]  # 回归目标：实际时效
 
-# ----------------------
-# 3. 划分训练集和测试集
-# ----------------------
-X_train, X_test, y_train_reg, y_test_reg = train_test_split(X, y_reg, test_size=0.3, random_state=42)
+# 双目标：让 XGBoost 同时学 下限 和 上限
+y_lower = df["route_min"]
+y_upper = df["route_max"]
 
-# ----------------------
-# 4. 预处理流水线
-# ----------------------
-preprocessor = ColumnTransformer(
-    transformers=[
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features),
-        ("num", StandardScaler(), num_features)
-    ]
+# ===================== 5. 数据集划分 =====================
+X_train, X_test, yl_train, yl_test, yu_train, yu_test = train_test_split(
+    X, y_lower, y_upper, test_size=0.3, random_state=42
 )
 
-# ----------------------
-# 5. 第一步：训练回归模型，预测基准时效
-# ----------------------
-reg_model = Pipeline(steps=[
-    ("preprocessor", preprocessor),
-    ("regressor", xgb.XGBRegressor(random_state=42))
+# ===================== 6. 预处理流水线 =====================
+preprocessor = ColumnTransformer([
+    ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features),
+    ("num", StandardScaler(), num_features)
 ])
 
-reg_model.fit(X_train, y_train_reg)
-y_pred_reg = reg_model.predict(X_test)
-print("回归模型MAE:", mean_absolute_error(y_test_reg, y_pred_reg))
-
-
-# ----------------------
-# 6. 第二步：构造区间标签，训练分类模型预测+-2天内的概率
-# ----------------------
-# 构造训练集的区间标签
-y_train_pred_reg = reg_model.predict(X_train)
-train_lower = y_train_pred_reg - 2
-train_upper = y_train_pred_reg + 2
-y_train_cls = ((y_train_reg >= train_lower) & (y_train_reg <= train_upper)).astype(int)
-
-# 构造测试集的区间标签
-test_lower = y_pred_reg - 2
-test_upper = y_pred_reg + 2
-y_test_cls = ((y_test_reg >= test_lower) & (y_test_reg <= test_upper)).astype(int)
-
-# 训练分类模型
-cls_model = Pipeline(steps=[
-    ("preprocessor", preprocessor),
-    ("classifier", xgb.XGBClassifier(random_state=42, use_label_encoder=False, eval_metric="logloss"))
+# ===================== 7. XGBoost 训练：预测下限（min） =====================
+model_min = Pipeline([
+    ("pre", preprocessor),
+    ("xgb", xgb.XGBRegressor(
+        random_state=42,
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.1
+    ))
 ])
+model_min.fit(X_train, yl_train)
 
-cls_model.fit(X_train, y_train_cls)
-y_pred_cls_proba = cls_model.predict_proba(X_test)[:, 1]
-print("分类模型AUC:", roc_auc_score(y_test_cls, y_pred_cls_proba))
+# ===================== 8. XGBoost 训练：预测上限（max） =====================
+# 关键：上限模型我们要偏向“保守”，让预测稍微大一点，降低 breach
+model_max = Pipeline([
+    ("pre", preprocessor),
+    ("xgb", xgb.XGBRegressor(
+        random_state=42,
+        n_estimators=250,
+        max_depth=6,
+        learning_rate=0.1,
+        objective='reg:squarederror'
+    ))
+])
+model_max.fit(X_train, yu_train)
 
-# ----------------------
-# 7. 示例：对一个新订单做预测
-# ----------------------
-new_order = pd.DataFrame({
-    "Origin_Warehouse": ["Warehouse_MIA"],
-    "Destination": ["San Francisco"],
-    "Carrier": ["UPS"],
-    "Weight_kg": [25.7],
-    "Cost": [67.46],
-    "Distance_miles": [291]
-})
+# ===================== 9. 模型预测 =====================
+pred_min = model_min.predict(X_test)
+pred_max = model_max.predict(X_test)
 
-pred_days = reg_model.predict(new_order)[0]
-prob_in_range = cls_model.predict_proba(new_order)[:, 1][0]
+# 真实 Transit_Days
+y_true = df.loc[X_test.index, "Transit_Days"].values
 
-print(f"预测基准时效：{pred_days:.1f} 天")
-print(f"时效落在 [{pred_days-2:.1f}, {pred_days+2:.1f}] 天内的概率：{prob_in_range:.2%}")
+# ===================== 10. 业务指标评估（你最关心的） =====================
+within = ((y_true >= pred_min) & (y_true <= pred_max)).mean()
+breach = (y_true > pred_max).mean()
+width = (pred_max - pred_min).mean()
+
+print(f"✅ 区间覆盖率：{within:.2%}")
+print(f"🚨 超过上限比例 (breach rate)：{breach:.2%}")
+print(f"📏 平均区间宽度：{width:.2f} 天")

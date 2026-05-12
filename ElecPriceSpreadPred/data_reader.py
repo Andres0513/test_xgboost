@@ -66,7 +66,7 @@ def load_electricity_bidding_space_data(folder_path):
             file_full_path = os.path.join(folder_path, file)
 
             # ✅ 关键：跳过前6行，从第7行开始读真正数据
-            df = pd.read_excel(file_full_path, skiprows=range(1,6),header=0)
+            df = pd.read_excel(file_full_path, skiprows=range(1,5),header=0)
 
             # 提取所需列
             df = df[["时间",	"日前竞价空间", "实际竞价空间","统调负荷预测","统调负荷实际","外来电计划","外来电实际","光伏出力预测",

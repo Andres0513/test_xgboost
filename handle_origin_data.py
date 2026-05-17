@@ -51,6 +51,23 @@ def postprocess_merged_bidding_space_data(merged_data: pd.DataFrame) -> pd.DataF
     df = df.rename(columns=rename_map)
     return df
 
+def  postprocess_merged_weather_data(merged_data: pd.DataFrame) -> pd.DataFrame:
+    df = merged_data.copy()
+    # 1. 除了第一列（时间），其他列整体上移一行（相当于把上一行的值“推”到下一行）
+    cols_to_shift = df.columns[1:]  # 除了第一列
+    df[cols_to_shift] = df[cols_to_shift].shift(-1)
+    # 2. 去掉最后一行
+    df = df.drop(index=df.index[-1]).reset_index(drop=True)
+    def fix_time(time_str):
+        time_str = str(time_str).strip()
+        if "24:00" in time_str:
+            date_part = time_str.split(" ")[0]
+            new_date = pd.to_datetime(date_part) + pd.Timedelta(days=1)
+            return new_date.strftime("%Y-%m-%d 00:00")
+        return time_str
+    df['时间'] = df['时间'].apply(fix_time)
+    return df
+
 # ===================== 主函数 =====================
 if __name__ == '__main__':
     # 自动获取当前脚本所在目录
@@ -71,4 +88,6 @@ if __name__ == '__main__':
             df_final = postprocess_merged_clearing_data(df_final)
         if key_word == "竞价空间":
             df_final = postprocess_merged_bidding_space_data(df_final)
+        if key_word == "天气":
+            df_final = postprocess_merged_weather_data(df_final)
         df_final.to_excel(target_path, index=False)

@@ -2,6 +2,12 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from enum import Enum
+import datetime
+
+class grid_env(Enum):
+    NORMAL = 1
+    GAS_IN_MARKET = 2   # 气电入市
 
 # 👇 解决中文乱码 + 负号显示问题
 plt.rcParams['font.sans-serif'] = ['SimHei', 'WenQuanYi Zen Hei', 'PingFang SC', 'Arial Unicode MS']
@@ -93,7 +99,22 @@ def load_electricity_bidding_space_data(folder_path):
 def load_weather_data(folder_path):
     file_path = os.path.join(folder_path, '天气.xlsx')
     df = pd.read_excel(file_path, header=0)
+    df['时间'] = pd.to_datetime(df['时间'])
+
     return df
+
+#-----------生成电网环境的df----------
+def genrate_env_flag(date_str):
+    d = pd.to_datetime(date_str)
+    d_date = d.normalize()
+    # 2024-05-01 ~ 2024-12-31 → GAS
+    # 2026-04-01 ~ 2026-05-02 → GAS
+    # 其余 → NORMAL
+    if (pd.Timestamp("2024-05-01") <= d_date <= pd.Timestamp("2024-12-31")) or \
+            (pd.Timestamp("2026-04-01") <= d_date):
+        return grid_env.GAS_IN_MARKET.value
+    else:
+        return grid_env.NORMAL.value
 
 def plot_price_curve(df):
     plt.figure(figsize=(16, 6))

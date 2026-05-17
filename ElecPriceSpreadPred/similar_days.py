@@ -1,12 +1,6 @@
 import pandas as pd
-from data_reader import load_electricity_clearing_data, load_electricity_bidding_space_data, load_weather_data
+from data_reader import load_electricity_clearing_data, load_electricity_bidding_space_data, load_weather_data, genrate_env_flag
 import numpy as np
-from enum import Enum
-import datetime
-
-class grid_env(Enum):
-    NORMAL = 1
-    GAS_IN_MARKET = 2   # 气电入市
 
 def postprocess_data(input: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
     df = input.copy()
@@ -104,19 +98,7 @@ if __name__ == '__main__':
     clearing_df = load_electricity_clearing_data(folder)
     bidding_space_df = load_electricity_bidding_space_data(folder)
     weather_df = load_weather_data(folder)
-    #-----------生成电网环境的df----------
-    def get_env_flag(date_str):
-        d = pd.to_datetime(date_str)
-        d_date = d.normalize()
-        # 2024-05-01 ~ 2024-12-31 → GAS
-        # 2026-04-01 ~ 2026-05-02 → GAS
-        # 其余 → NORMAL
-        if (pd.Timestamp("2024-05-01") <= d_date <= pd.Timestamp("2024-12-31")) or \
-                (pd.Timestamp("2026-04-01") <= d_date <= pd.Timestamp("2026-05-02")):
-            return grid_env.GAS_IN_MARKET.value
-        else:
-            return grid_env.NORMAL.value
-    bidding_space_df['grid_env'] = bidding_space_df['时间'].apply(get_env_flag)
+    bidding_space_df['grid_env'] = bidding_space_df['时间'].apply(genrate_env_flag)
 
     bidding_space_dict = postprocess_data(bidding_space_df, start_date, end_date)
     clearing_dict = postprocess_data(clearing_df, start_date, end_date)

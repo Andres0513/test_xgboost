@@ -15,6 +15,7 @@ print(f"✅ 数据集已加载：uninted_df.pkl")
 if '时间_dt' in df.columns:
     df = df.drop('时间_dt', axis=1)
 
+
 # 取近期的数据去训练
 start_date = '2024-06-01'
 df = df[df['时间'].dt.date >= pd.to_datetime(start_date).date()]

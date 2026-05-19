@@ -180,7 +180,7 @@ for epoch in range(epochs):
         # 变好了：更新最好值，清零计数器
         best_acc = validation_acc
         stop_counter = 0
-        torch.save(model.state_dict(), "best_model.pth")  # 保存最优模型
+        torch.save(model, "best_model.pth")  # 保存最优模型
     else:
         # 没变好：计数器+1
         stop_counter += 1
@@ -191,7 +191,7 @@ for epoch in range(epochs):
         break
 
 # ===================== 训练结束后：在【验证集】上计算 正负一致性准确率 =====================
-model.load_state_dict(torch.load("best_model.pth"))
+model = torch.load("best_model.pth", map_location="cpu", weights_only=False)
 model.eval()
 # 预测概率
 test_pred_prob = model(X_test)

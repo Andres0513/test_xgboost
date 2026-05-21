@@ -34,17 +34,13 @@ df = df[df['时间'].dt.date >= pd.to_datetime(start_date).date()]
 # # 删掉没有燃气的行
 # df = df[df['grid_env'] == 2]
 # 按照日期选择最近的数据为验证集
-split_validation_1_date = '2026-04-16'
-split_test_date = '2026-05-01'
-# train_df = df[df['时间'].dt.date < pd.to_datetime(split_validation_1_date).date()]
-# validation_df = df[(df['时间'].dt.date < pd.to_datetime(split_test_date).date()) &
-#              (df['时间'].dt.date >= pd.to_datetime(split_validation_1_date).date())]
+split_test_date = '2026-02-01'
 
 test_df = df[df['时间'].dt.date >= pd.to_datetime(split_test_date).date()]
 test_df_0 = test_df.copy()
 df = df[df['时间'].dt.date < pd.to_datetime(split_test_date).date()]
 
-df = df[(df['时间'].dt.date <= pd.to_datetime('2026-01-30').date()) | (df['时间'].dt.date >= pd.to_datetime('2026-02-01').date())]
+df = df[(df['时间'].dt.date <= pd.to_datetime('2026-01-01').date()) | (df['时间'].dt.date >= pd.to_datetime('2026-02-01').date())]
 
 train_df, validation_df = train_test_split(
     df,
@@ -116,10 +112,10 @@ class MLP(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.ReLU(),
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(64, 1),
             nn.Sigmoid()
         )

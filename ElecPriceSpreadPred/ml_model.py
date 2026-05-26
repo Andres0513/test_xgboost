@@ -113,6 +113,32 @@ def generate_that_day_feature(df_1, df_2, df_3):
             df_3.at[idx, f'day_风速{i}'] = window_data['风速'].iloc[i]
     return df_3
 
+def generate_recent_prices_spread(df_3):
+    # 先按时间排序
+    df_3 = df_3.sort_values("时间").reset_index(drop=True)
+    # 提取时间中的「时刻」部分（只保留时:分），用来匹配前几天的同一时间
+    df_3["时刻"] = df_3["时间"].dt.strftime("%H:%M")
+    #  循环生成前 1~7 天同一时间的价差
+    for days in range(2, 8):
+        col_name = f"价差_前{days}天"
+        # 复制一份数据，把时间往前推 days 天，然后按「时间」+「时刻」合并，就能拿到同一时刻的历史数据
+        tmp = df_3[["时间", "时刻", "价差（实时-日前）"]].copy()
+        tmp["时间_偏移"] = tmp["时间"] + pd.Timedelta(days=days)
+        # 合并：用「偏移后的时间」和「原时间」做 key，匹配同一时刻的历史价差
+        merged = pd.merge(
+            df_3,
+            tmp[["时间_偏移", "时刻", "价差（实时-日前）"]].rename(columns={"价差（实时-日前）": col_name}),
+            left_on=["时间", "时刻"],
+            right_on=["时间_偏移", "时刻"],
+            how="left"
+        )
+        # 只保留新增的那一列
+        df_3[col_name] = merged[col_name]
+    # 删掉辅助列
+    df_3 = df_3.drop(columns=["时刻"])
+    return df_3
+
+
 def generate_feature_df(bidding_space_df: pd.DataFrame, weather_df: pd.DataFrame, clearing_df: pd.DataFrame, start_date, end_date)->pd.DataFrame:
     # 转时间格式
     df_1 = bidding_space_df.copy()
@@ -122,6 +148,7 @@ def generate_feature_df(bidding_space_df: pd.DataFrame, weather_df: pd.DataFrame
     df_3 = clearing_df.copy()
     df_3['时间_dt'] = pd.to_datetime(df_3['时间'])
 
+    df_3 = generate_recent_prices_spread(df_3)
     df_3 = generate_forward_feature(df_1, df_2, df_3)
     df_3 = generate_that_day_feature(df_1, df_2, df_3)
 
@@ -201,6 +228,8 @@ if __name__ == '__main__':
     # 取近期的数据去训练
     start_date = '2024-06-01'
     df = df[df['时间'].dt.date >= pd.to_datetime(start_date).date()]
+    end_date = '2026-05-13'
+    df = df[df['时间'].dt.date <= pd.to_datetime(end_date).date()]
     # # 删掉没有燃气的行
     # df = df[df['grid_env'] == 2]
     # 按照日期选择最近的数据为验证集
@@ -273,13 +302,13 @@ if __name__ == '__main__':
     # )
 
     model = xgb.XGBClassifier(
-        n_estimators=100,  # 减少树数量
+        n_estimators=200,  # 减少树数量
         max_depth=4,  # 大幅降低深度！核心修复
         learning_rate=0.06,  # 慢一点学习，更稳
         subsample=0.7,  # 随机采样70%数据 → 防过拟合
         colsample_bytree=0.7,  # 随机采样70%特征 → 防过拟合
-        reg_alpha=5,  # 加大L1正则
-        reg_lambda=8,  # 加大L2正则（更重要）
+        reg_alpha=1,  # 加大L1正则
+        reg_lambda=1,  # 加大L2正则（更重要）
         min_child_weight=2,  # 叶子节点最小样本数，防止过细
         random_state=42,
         n_jobs=-1,

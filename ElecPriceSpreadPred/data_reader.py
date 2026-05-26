@@ -136,15 +136,23 @@ def plot_price_curve(df):
     plt.tight_layout()
     plt.show()
 
+def sta_spread_curve(clearing_df):
+    df = clearing_df.copy()
+    df['日期'] = df['时间'].dt.date
+    df['sign'] = (df['价差（实时-日前）'] > 0).astype(int)
+    daily_sta = df.groupby('日期').agg(
+        准确率=('sign', 'mean')
+    ).reset_index()
+    daily_sta.to_excel("spread_sgin_sta.xlsx")
 
 # ===================== 主函数 =====================
 if __name__ == "__main__":
     # Excel 的文件夹路径
     folder = r"/Users/yukaifeng/Codes/Python/trail02/electricity_data"
-
+    # 里面有重复数据，先放在这里
     clearing_df = load_electricity_clearing_data(folder)
     bidding_space_df = load_electricity_bidding_space_data(folder)
     weather_df = load_weather_data(folder)
     plot_price_curve(clearing_df)
-
+    # sta_spread_curve(clearing_df)
     a = 0

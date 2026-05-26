@@ -30,7 +30,8 @@ if '时间_dt' in df.columns:
 # 取近期的数据去训练
 start_date = '2024-06-01'
 df = df[df['时间'].dt.date >= pd.to_datetime(start_date).date()]
-# df = df[df['时间'].dt.date <= pd.to_datetime('2026-03-30').date()]
+end_date = '2026-02-28'
+df = df[df['时间'].dt.date <= pd.to_datetime(end_date).date()]
 # # 删掉没有燃气的行
 # df = df[df['grid_env'] == 2]
 # 按照日期选择最近的数据为验证集
@@ -39,8 +40,16 @@ split_test_date = '2026-02-01'
 test_df = df[df['时间'].dt.date >= pd.to_datetime(split_test_date).date()]
 test_df_0 = test_df.copy()
 df = df[df['时间'].dt.date < pd.to_datetime(split_test_date).date()]
+# df = df[(df['时间'].dt.date <= pd.to_datetime('2026-01-01').date()) | (df['时间'].dt.date >= pd.to_datetime('2026-02-01').date())]
 
-df = df[(df['时间'].dt.date <= pd.to_datetime('2026-01-01').date()) | (df['时间'].dt.date >= pd.to_datetime('2026-02-01').date())]
+# ===================== 拷贝临近日 =====================
+# n = 3
+# max_date = df['时间'].max()
+# one_month_ago = max_date - pd.DateOffset(months=1)
+# df_recent = df[df['时间'] >= one_month_ago].copy()
+# df_resample_ready = pd.concat([df_recent]*n, ignore_index=True)
+# df = pd.concat([df, df_resample_ready], ignore_index=True)
+# df = df.sort_values('时间').reset_index(drop=True)
 
 train_df, validation_df = train_test_split(
     df,
@@ -112,10 +121,10 @@ class MLP(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.4),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.4),
             nn.Linear(64, 1),
             nn.Sigmoid()
         )
@@ -129,6 +138,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = model.to(device)
 
 # 4. 损失 & 优化器
+# # 计算正类权重 (负样本数量 / 正样本数量)
+# pos_weight = torch.tensor([2854 / 2138]).to(device)
+# criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) # 注意这里换成了带Logits的损失函数
 criterion = nn.BCELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-4)
 
@@ -268,6 +280,7 @@ pred_val_np = test_pred_class.flatten()
 df_val = test_df_0[["时间", "日前价格", "实时价格", "价差（实时-日前）"]].copy()
 # 再把数组按顺序拼接到你的DataFrame后面，列名设为 pred_val
 df_val['pred_val(0表示负，1表示正)'] = pred_val_np
+df_val['pred_prob'] = test_pred_prob
 
 # ✅ 新增一列：1=预测正确，0=预测错误
 df_val['correct'] = (df_val['pred_val(0表示负，1表示正)'] == np.where(df_val["价差（实时-日前）"] > 0, 1, 0)).astype(int)
